@@ -30,3 +30,6 @@ export function IconSymbol({
     />
   );
 }
+
+// Also export as default to support both import styles
+export default IconSymbol;
