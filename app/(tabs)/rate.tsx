@@ -7,7 +7,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import RatingInput from '@/components/RatingInput';
-import { pubsAPI, ratingsAPI } from '@/services/api';
+import { pubsAPI, ratingsAPI, photosAPI } from '@/services/api';
 import { Pub } from '@/types';
 
 export default function RateScreen() {
@@ -77,16 +77,38 @@ export default function RateScreen() {
 
     setLoading(true);
     try {
-      const response = await ratingsAPI.addRating(selectedPub.id, rating, comment);
+      // First submit the rating
+      const ratingResponse = await ratingsAPI.addRating(selectedPub.id, rating, comment);
       
-      if (response.success) {
+      if (ratingResponse.success && ratingResponse.data) {
+        const newRatingId = ratingResponse.data.id;
+        
+        // If there are photos, upload them
+        if (photos.length > 0) {
+          const photoPromises = photos.map(photoBase64 => 
+            photosAPI.uploadPhoto(selectedPub.id, newRatingId, photoBase64)
+          );
+          
+          try {
+            // We upload photos in parallel
+            await Promise.all(photoPromises);
+          } catch (photoError) {
+            console.error('Error uploading photos:', photoError);
+            // We still consider the rating as successful even if photo upload fails
+            Alert.alert(
+              'Photos Not Uploaded',
+              'Your rating was submitted but there was a problem uploading your photos.'
+            );
+          }
+        }
+        
         Alert.alert(
           'Rating Submitted',
           `Thank you for rating ${selectedPub.name}!`,
           [
             {
               text: 'View Pub',
-              onPress: () => router.push(`/pub/${selectedPub.id}`),
+              onPress: () => router.push(`/pub/${selectedPub.id}?ratingId=${newRatingId}`),
             },
             {
               text: 'Rate Another',
@@ -97,10 +119,14 @@ export default function RateScreen() {
           ]
         );
       } else {
-        Alert.alert('Error', response.error || 'Failed to submit rating');
+        Alert.alert('Error', ratingResponse.error || 'Failed to submit rating');
       }
     } catch (error) {
-      Alert.alert('Error', 'An error occurred while submitting your rating');
+      console.error('Error submitting rating:', error);
+      Alert.alert(
+        'Connection Error', 
+        'An error occurred while submitting your rating. Please check your network connection and try again.'
+      );
     } finally {
       setLoading(false);
     }

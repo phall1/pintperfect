@@ -7,6 +7,7 @@ import {
   Dimensions,
   Text,
   Platform,
+  Alert,
 } from "react-native";
 import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
 import * as Location from "expo-location";
@@ -17,6 +18,7 @@ import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { IconSymbol } from "@/components/ui/IconSymbol";
 import { Pub } from "@/types";
+import { pubsAPI } from "@/services/api";
 
 // Mock data for development
 const MOCK_PUBS: Pub[] = [
@@ -59,6 +61,7 @@ export default function MapScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPub, setSelectedPub] = useState<Pub | null>(null);
+  const [pubs, setPubs] = useState<Pub[]>([]);
   const mapRef = useRef<MapView>(null);
   const colorScheme = useColorScheme();
 
@@ -70,19 +73,57 @@ export default function MapScreen() {
         
         if (status !== "granted") {
           setErrorMsg("Permission to access location was denied");
-          setLoading(false);
+          // Still continue to load pubs without location
+          fetchAllPubs();
           return;
         }
 
         const location = await Location.getCurrentPositionAsync({});
         setLocation(location.coords);
+        
+        // Fetch nearby pubs with location
+        await fetchNearbyPubs(location.coords.latitude, location.coords.longitude);
       } catch (error) {
         setErrorMsg("Could not get your location");
+        // Still try to load all pubs as fallback
+        fetchAllPubs();
       } finally {
         setLoading(false);
       }
     })();
   }, []);
+  
+  const fetchNearbyPubs = async (latitude: number, longitude: number) => {
+    try {
+      const response = await pubsAPI.getNearbyPubs(latitude, longitude, 5);
+      if (response.success && response.data) {
+        setPubs(response.data);
+      } else {
+        // Fallback to all pubs if nearby search fails
+        fetchAllPubs();
+      }
+    } catch (error) {
+      console.error("Error fetching nearby pubs:", error);
+      // Fallback to all pubs if nearby search fails
+      fetchAllPubs();
+    }
+  };
+  
+  const fetchAllPubs = async () => {
+    try {
+      const response = await pubsAPI.getAllPubs();
+      if (response.success && response.data) {
+        setPubs(response.data);
+      } else {
+        setPubs(MOCK_PUBS); // Use mock data as last resort
+        Alert.alert("Error", "Could not load pubs from the server. Using sample data instead.");
+      }
+    } catch (error) {
+      console.error("Error fetching all pubs:", error);
+      setPubs(MOCK_PUBS); // Use mock data as last resort
+      Alert.alert("Error", "Could not load pubs from the server. Using sample data instead.");
+    }
+  };
 
   const handlePubSelect = (pub: Pub) => {
     setSelectedPub(pub);
@@ -151,7 +192,7 @@ export default function MapScreen() {
         showsUserLocation
         showsMyLocationButton={false}
       >
-        {MOCK_PUBS.map((pub) => (
+        {pubs.map((pub) => (
           <Marker
             key={pub.id}
             coordinate={{

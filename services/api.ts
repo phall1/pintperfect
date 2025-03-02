@@ -1,8 +1,19 @@
 import { ApiResponse, User, Pub, Rating, Photo } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Base API configuration
-const API_URL = 'http://localhost:3000/api';
+// For iOS simulator, use localhost
+// For Android emulator, use 10.0.2.2 instead of localhost
+// For physical devices, use your computer's local IP address
+const getApiUrl = () => {
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000/api'; // Android emulator
+  }
+  return 'http://localhost:3000/api'; // iOS simulator or dev machine
+};
+
+const API_URL = getApiUrl();
 
 // Prepare headers with authentication if token exists
 const getHeaders = async () => {
@@ -94,7 +105,7 @@ export const ratingsAPI = {
 // Photos API functions
 export const photosAPI = {
   uploadPhoto: (pubId: string, ratingId: string, base64Image: string) => 
-    apiRequest<Photo>('/photos', 'POST', { pubId, ratingId, image: base64Image }),
+    apiRequest<Photo>('/photos/base64', 'POST', { pubId, ratingId, image: base64Image }),
   
   deletePhoto: (photoId: string) => 
     apiRequest(`/photos/${photoId}`, 'DELETE'),

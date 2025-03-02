@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Image, TouchableOpacity, ActivityIndicator, Linking, Alert } from 'react-native';
+import { StyleSheet, ScrollView, View, Image, TouchableOpacity, ActivityIndicator, Linking, Alert, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -26,20 +26,38 @@ export default function PubDetailScreen() {
     if (!id) return;
     
     setLoading(true);
+    setError(null);
+    
     try {
+      // First, try to get the pub details
       const pubResponse = await pubsAPI.getPubById(id as string);
       if (pubResponse.success && pubResponse.data) {
         setPub(pubResponse.data);
+        
+        // If pub details succeeded, try to get ratings
+        try {
+          const ratingsResponse = await ratingsAPI.getRatingsByPubId(id as string);
+          if (ratingsResponse.success && ratingsResponse.data) {
+            setRatings(ratingsResponse.data);
+          } else {
+            console.warn('Ratings fetch failed:', ratingsResponse.error);
+            // We don't set error here since we at least have the pub data
+          }
+        } catch (ratingsErr) {
+          console.error('Error fetching ratings:', ratingsErr);
+          // We don't set error here since we at least have the pub data
+        }
       } else {
         setError(pubResponse.error || 'Failed to fetch pub details');
-      }
-      
-      const ratingsResponse = await ratingsAPI.getRatingsByPubId(id as string);
-      if (ratingsResponse.success && ratingsResponse.data) {
-        setRatings(ratingsResponse.data);
+        console.error('Pub fetch failed:', pubResponse.error);
+        if (!pubResponse.success && pubResponse.error?.includes('not found')) {
+          Alert.alert('Pub Not Found', 'The pub you are looking for could not be found.');
+        }
       }
     } catch (err) {
-      setError('An error occurred while fetching pub details');
+      console.error('Error in fetchPubDetails:', err);
+      setError('An error occurred while fetching pub details. Please check your network connection and try again.');
+      Alert.alert('Connection Error', 'Could not connect to the server. Please check your network connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -52,23 +70,63 @@ export default function PubDetailScreen() {
   };
 
   const openMap = () => {
-    if (pub) {
-      const url = `https://maps.apple.com/?q=${pub.name}&ll=${pub.latitude},${pub.longitude}`;
-      Linking.openURL(url);
+    if (displayPub) {
+      let url;
+      // Different map URLs for iOS and Android
+      if (Platform.OS === 'ios') {
+        // Apple Maps for iOS
+        url = `https://maps.apple.com/?q=${encodeURIComponent(displayPub.name)}&ll=${displayPub.latitude},${displayPub.longitude}`;
+      } else {
+        // Google Maps for Android
+        url = `https://www.google.com/maps/search/?api=1&query=${displayPub.latitude},${displayPub.longitude}&query_place_id=${encodeURIComponent(displayPub.name)}`;
+      }
+      
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          Alert.alert(
+            'Error',
+            'Cannot open maps app. Make sure you have a maps app installed.',
+            [{ text: 'OK' }]
+          );
+        }
+      });
     }
   };
 
   const callPub = () => {
-    if (pub && pub.phoneNumber) {
-      Linking.openURL(`tel:${pub.phoneNumber}`);
+    if (displayPub && displayPub.phoneNumber) {
+      const phoneUrl = `tel:${displayPub.phoneNumber}`;
+      Linking.canOpenURL(phoneUrl).then(supported => {
+        if (supported) {
+          Linking.openURL(phoneUrl);
+        } else {
+          Alert.alert('Error', 'Cannot open phone app.');
+        }
+      });
     } else {
       Alert.alert('No Phone Number', 'This pub does not have a phone number listed.');
     }
   };
 
   const visitWebsite = () => {
-    if (pub && pub.website) {
-      Linking.openURL(pub.website);
+    if (displayPub && displayPub.website) {
+      // Make sure the website URL has http:// or https:// prefix
+      let websiteUrl = displayPub.website;
+      if (!websiteUrl.startsWith('http://') && !websiteUrl.startsWith('https://')) {
+        websiteUrl = 'https://' + websiteUrl;
+      }
+      
+      Linking.canOpenURL(websiteUrl).then(supported => {
+        if (supported) {
+          Linking.openURL(websiteUrl);
+        } else {
+          Alert.alert('Error', 'Cannot open this website. The URL may be invalid.');
+        }
+      }).catch(() => {
+        Alert.alert('Error', 'There was a problem opening the website.');
+      });
     } else {
       Alert.alert('No Website', 'This pub does not have a website listed.');
     }
@@ -132,9 +190,9 @@ export default function PubDetailScreen() {
     },
   ];
 
-  // Use mock data for development
-  const displayPub = pub || mockPub;
-  const displayRatings = ratings.length > 0 ? ratings : mockRatings;
+  // Use real data from API, fallback to mock data only if needed
+  const displayPub = pub || (id ? null : mockPub);
+  const displayRatings = ratings.length > 0 ? ratings : (id ? [] : mockRatings);
 
   // Compute average rating
   const averageRating = displayRatings.length > 0

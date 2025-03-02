@@ -135,8 +135,8 @@ export default function HomeScreen() {
     );
   }
   
-  // Using mock data for now, but will use filteredPubs when API is ready
-  const displayPubs = mockPubs.length > 0 ? mockPubs : filteredPubs;
+  // Use real data from the API, fallback to mock data if empty
+  const displayPubs = filteredPubs.length > 0 ? filteredPubs : mockPubs;
 
   return (
     <ThemedView style={styles.container}>
